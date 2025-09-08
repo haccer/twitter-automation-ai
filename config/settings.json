@@ -12,6 +12,7 @@
     "max_tweets_per_keyword_scrape": 15,
     "media_directory": "media_files",
     "processed_tweets_file": "processed_tweets_log.csv",
+    "community_replies_file": "data/community_replies.txt",
     "cookie_file_per_account_in_accounts_json": true,
     "analysis_config": {
       "enable_relevance_filter": {

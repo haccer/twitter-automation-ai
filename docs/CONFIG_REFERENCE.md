@@ -13,6 +13,7 @@ settings.json
   - response_interval_seconds: Base delay between actions.
   - media_directory: Folder for downloaded media.
   - processed_tweets_file: CSV for processed action keys.
+  - community_replies_file: Path to a txt file with one reply per line. When `post_to_community` is true for an account, new community posts and replies pull text from this list (random line) instead of generating with LLM.
 
 Community Engagement (in `twitter_automation.action_config` or per-account override)
 - enable_community_engagement: Enable engaging with posts from the configured `community_id` timeline.
@@ -25,6 +26,10 @@ Community Engagement (in `twitter_automation.action_config` or per-account overr
 
 Notes
 - Community engagement uses the same relevance and action decision heuristics configured in `engagement_decision` and the per-account `ActionConfig` thresholds. When the decision output is `repost`, the orchestrator maps it to a retweet for community posts.
+  - If `community_replies_file` is set and the account has `post_to_community: true`, the app sources content from that file for:
+    - New posts made into the selected community (uses a random line, up to 270 chars).
+    - Replies posted while operating with community posting enabled.
+    - If the file is missing or empty, it falls back to LLM generation.
   - For cookie-based login, ensure JSON contains valid `auth_token` and `ct0` for the same domain as `cookie_domain_url`. If cookies are invalid/expired, set `browser_settings.login_wait_seconds` (e.g., 60–120) and complete manual login; the run will continue once signed-in is detected.
   - analysis_config
     - enable_relevance_filter: { competitor_reposts, likes, keyword_replies }

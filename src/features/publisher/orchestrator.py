@@ -40,10 +40,30 @@ class TweetPublisher:
         os.makedirs(self.media_dir, exist_ok=True)
 
     async def post_new_tweet(self, content: TweetContent, llm_settings: Optional[LLMSettings] = None) -> bool:
-        # 1) Generate text if needed
-        tweet_text = await generate_post_text_if_needed(
-            content.text, llm_settings, self.llm_service
-        ) if content and content.text else (content.text if content else "")
+        # 1) Derive text: if posting to a community and a canned replies file is configured, pull from file.
+        tweet_text: str = ""
+        try:
+            if getattr(self.account_config, "post_to_community", False):
+                cfg_path = self.config_loader.get_twitter_automation_setting("community_replies_file")
+                if isinstance(cfg_path, str) and cfg_path.strip():
+                    from pathlib import Path
+                    # Resolve path relative to project root
+                    project_root = Path(__file__).resolve().parents[2]
+                    file_path = (project_root / cfg_path) if not Path(cfg_path).is_absolute() else Path(cfg_path)
+                    from utils.file_handler import FileHandler
+                    lines = FileHandler(self.config_loader).read_lines(file_path)
+                    if lines:
+                        import random as _rnd
+                        tweet_text = (_rnd.choice(lines) or "")[:270]
+        except Exception:
+            # Fall back to normal generation path on any error
+            tweet_text = ""
+
+        # If no canned text was selected, use original/generation flow
+        if not tweet_text:
+            tweet_text = await generate_post_text_if_needed(
+                content.text, llm_settings, self.llm_service
+            ) if content and content.text else (content.text if content else "")
 
         # 2) Prepare media (download URLs, merge with local paths). Pass BrowserManager for authenticated downloads.
         final_media_paths = await prepare_media_paths(content, self.media_dir, self.browser_manager)

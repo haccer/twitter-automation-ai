@@ -199,6 +199,20 @@ class FileHandler:
             logger.error(f"Error reading text file {file_path}: {e}")
             return None
 
+    def read_lines(self, file_path: Path, skip_empty: bool = True) -> List[str]:
+        """Reads lines from a text file, optionally skipping empty/whitespace-only lines."""
+        try:
+            content = self.read_text(file_path)
+            if content is None:
+                return []
+            lines = [line.strip() for line in content.splitlines()]
+            if skip_empty:
+                lines = [ln for ln in lines if ln]
+            return lines
+        except Exception as e:
+            logger.error(f"Error reading lines from text file {file_path}: {e}")
+            return []
+
     def write_text(self, file_path: Path, content: str, append: bool = False) -> bool:
         """Writes or appends content to a text file. Ensures directory exists."""
         try:

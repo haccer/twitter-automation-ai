@@ -5,6 +5,7 @@ import os
 import time
 import random
 from datetime import datetime, timezone
+from pathlib import Path
 
 # Ensure src directory is in Python path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -478,25 +479,42 @@ class TwitterOrchestrator:
                             scraped_tweet_to_reply.is_confirmed_thread = is_confirmed
                             logger.info(f"[{account.account_id}] Thread analysis for reply target {scraped_tweet_to_reply.tweet_id}: {is_confirmed}")
 
-                        # Generate reply text (explicitly constrain length and style)
-                        reply_prompt_context = (
-                            "This tweet is part of a thread." if scraped_tweet_to_reply.is_confirmed_thread else "This is a standalone tweet."
-                        )
-                        reply_prompt = (
-                            f"Write a concise, natural reply under 270 characters. {reply_prompt_context} "
-                            f"Avoid hashtags, links, and emojis unless essential. One short paragraph.\n\n"
-                            f"Original tweet by @{scraped_tweet_to_reply.user_handle or 'user'}:\n"
-                            f"\"{scraped_tweet_to_reply.text_content}\"\n\nYour reply:"
-                        )
-                        
-                        logger.info(f"[{account.account_id}] Generating reply for tweet {scraped_tweet_to_reply.tweet_id}...")
-                        generated_reply_text = await llm_service.generate_text(
-                            prompt=reply_prompt,
-                            service_preference=llm_for_reply.service_preference,
-                            model_name=llm_for_reply.model_name_override,
-                            max_tokens=llm_for_reply.max_tokens,
-                            temperature=llm_for_reply.temperature
-                        )
+                        # Decide reply source: canned file (for community workflows) or LLM
+                        generated_reply_text = None
+                        used_canned = False
+                        if getattr(account, 'post_to_community', False):
+                            try:
+                                cfg_path = self.config_loader.get_twitter_automation_setting('community_replies_file')
+                                if isinstance(cfg_path, str) and cfg_path.strip():
+                                    file_path = (Path(__file__).resolve().parent.parent / cfg_path) if not Path(cfg_path).is_absolute() else Path(cfg_path)
+                                    lines = self.file_handler.read_lines(file_path)
+                                    if lines:
+                                        generated_reply_text = (random.choice(lines) or '')[:270].rstrip()
+                                        used_canned = True
+                            except Exception:
+                                used_canned = False
+                                generated_reply_text = None
+
+                        if not generated_reply_text:
+                            # Generate reply text (explicitly constrain length and style)
+                            reply_prompt_context = (
+                                "This tweet is part of a thread." if scraped_tweet_to_reply.is_confirmed_thread else "This is a standalone tweet."
+                            )
+                            reply_prompt = (
+                                f"Write a concise, natural reply under 270 characters. {reply_prompt_context} "
+                                f"Avoid hashtags, links, and emojis unless essential. One short paragraph.\n\n"
+                                f"Original tweet by @{scraped_tweet_to_reply.user_handle or 'user'}:\n"
+                                f"\"{scraped_tweet_to_reply.text_content}\"\n\nYour reply:"
+                            )
+
+                            logger.info(f"[{account.account_id}] Generating reply for tweet {scraped_tweet_to_reply.tweet_id}...")
+                            generated_reply_text = await llm_service.generate_text(
+                                prompt=reply_prompt,
+                                service_preference=llm_for_reply.service_preference,
+                                model_name=llm_for_reply.model_name_override,
+                                max_tokens=llm_for_reply.max_tokens,
+                                temperature=llm_for_reply.temperature
+                            )
 
                         if not generated_reply_text:
                             logger.error(f"[{account.account_id}] Failed to generate reply text for tweet {scraped_tweet_to_reply.tweet_id}. Skipping.")
