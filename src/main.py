@@ -481,18 +481,17 @@ class TwitterOrchestrator:
 
                         # Decide reply source: canned file (for community workflows) or LLM
                         generated_reply_text = None
-                        used_canned = False
                         if getattr(account, 'post_to_community', False):
                             try:
-                                cfg_path = self.config_loader.get_twitter_automation_setting('community_replies_file')
-                                if isinstance(cfg_path, str) and cfg_path.strip():
-                                    file_path = (Path(__file__).resolve().parent.parent / cfg_path) if not Path(cfg_path).is_absolute() else Path(cfg_path)
-                                    lines = self.file_handler.read_lines(file_path)
-                                    if lines:
-                                        generated_reply_text = (random.choice(lines) or '')[:270].rstrip()
-                                        used_canned = True
+                                cfg_list = self.config_loader.get_twitter_automation_setting('community_replies_file')
+                                cfg_state = self.config_loader.get_twitter_automation_setting('community_replies_state_file')
+                                if isinstance(cfg_list, str) and cfg_list.strip() and isinstance(cfg_state, str) and cfg_state.strip():
+                                    list_path = (Path(__file__).resolve().parent.parent / cfg_list) if not Path(cfg_list).is_absolute() else Path(cfg_list)
+                                    state_path = (Path(__file__).resolve().parent.parent / cfg_state) if not Path(cfg_state).is_absolute() else Path(cfg_state)
+                                    picked = await self.file_handler.pick_unique_line(list_path, state_path)
+                                    if picked:
+                                        generated_reply_text = picked
                             except Exception:
-                                used_canned = False
                                 generated_reply_text = None
 
                         if not generated_reply_text:

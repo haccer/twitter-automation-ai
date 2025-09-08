@@ -40,24 +40,24 @@ class TweetPublisher:
         os.makedirs(self.media_dir, exist_ok=True)
 
     async def post_new_tweet(self, content: TweetContent, llm_settings: Optional[LLMSettings] = None) -> bool:
-        # 1) Derive text: if posting to a community and a canned replies file is configured, pull from file.
+        # 1) Derive text: if posting to a community and a canned replies file is configured, pull a unique line.
         tweet_text: str = ""
-        try:
-            if getattr(self.account_config, "post_to_community", False):
-                cfg_path = self.config_loader.get_twitter_automation_setting("community_replies_file")
-                if isinstance(cfg_path, str) and cfg_path.strip():
-                    from pathlib import Path
-                    # Resolve path relative to project root
+        if getattr(self.account_config, "post_to_community", False):
+            try:
+                from pathlib import Path
+                from utils.file_handler import FileHandler
+                cfg_list = self.config_loader.get_twitter_automation_setting("community_replies_file")
+                cfg_state = self.config_loader.get_twitter_automation_setting("community_replies_state_file")
+                if isinstance(cfg_list, str) and cfg_list.strip() and isinstance(cfg_state, str) and cfg_state.strip():
                     project_root = Path(__file__).resolve().parents[2]
-                    file_path = (project_root / cfg_path) if not Path(cfg_path).is_absolute() else Path(cfg_path)
-                    from utils.file_handler import FileHandler
-                    lines = FileHandler(self.config_loader).read_lines(file_path)
-                    if lines:
-                        import random as _rnd
-                        tweet_text = (_rnd.choice(lines) or "")[:270]
-        except Exception:
-            # Fall back to normal generation path on any error
-            tweet_text = ""
+                    list_path = (project_root / cfg_list) if not Path(cfg_list).is_absolute() else Path(cfg_list)
+                    state_path = (project_root / cfg_state) if not Path(cfg_state).is_absolute() else Path(cfg_state)
+                    fh = FileHandler(self.config_loader)
+                    picked = await fh.pick_unique_line(list_path, state_path)
+                    if picked:
+                        tweet_text = picked
+            except Exception:
+                tweet_text = ""
 
         # If no canned text was selected, use original/generation flow
         if not tweet_text:

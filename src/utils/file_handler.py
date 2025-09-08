@@ -3,6 +3,9 @@ import logging
 import sys
 import csv
 import json
+import hashlib
+import random
+import asyncio
 from pathlib import Path
 from typing import Set, List, Optional, Dict, Any
 from datetime import datetime, timezone # Added datetime and timezone
@@ -30,6 +33,9 @@ logger = logging.getLogger(__name__)
 # .parent -> src
 # .parent -> project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Module-level lock to coordinate concurrent selection of unique canned lines
+_canned_replies_lock = asyncio.Lock()
 
 class FileHandler:
     def __init__(self, config_loader: Optional[ConfigLoader] = None):
@@ -212,6 +218,73 @@ class FileHandler:
         except Exception as e:
             logger.error(f"Error reading lines from text file {file_path}: {e}")
             return []
+
+    @staticmethod
+    def _normalize_for_hash(text: str) -> str:
+        try:
+            # Lower, collapse whitespace, strip punctuation-like edges commonly caused by trimming
+            norm = (text or "").strip().lower()
+            # Collapse internal whitespace
+            norm = " ".join(norm.split())
+            return norm
+        except Exception:
+            return (text or "").strip().lower()
+
+    async def pick_unique_line(
+        self,
+        list_file: Path,
+        state_file: Path,
+        allow_reuse_when_exhausted: bool = True,
+        hard_cap_chars: int = 270,
+    ) -> Optional[str]:
+        """
+        Picks a line from `list_file` not yet used per `state_file` across all accounts.
+        Uses a process-wide asyncio lock to avoid concurrent races in one process.
+        If all lines are used and `allow_reuse_when_exhausted` is True, it resets and continues.
+        Returns None if no line available or file missing.
+        """
+        lines = self.read_lines(list_file)
+        if not lines:
+            return None
+
+        async with _canned_replies_lock:
+            state: Dict[str, Any] = self.read_json(state_file) or {}
+            used_hashes: set = set(state.get("used_hashes", []))
+
+            # Build available candidates
+            candidates = []
+            for ln in lines:
+                norm = self._normalize_for_hash(ln)
+                h = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+                if h not in used_hashes:
+                    candidates.append((ln, h))
+
+            if not candidates:
+                if not allow_reuse_when_exhausted:
+                    return None
+                # Reset and use full list again
+                used_hashes = set()
+                candidates = []
+                for ln in lines:
+                    norm = self._normalize_for_hash(ln)
+                    h = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+                    candidates.append((ln, h))
+
+            choice_ln, choice_hash = random.choice(candidates)
+            # Record usage
+            used_hashes.add(choice_hash)
+            new_state = {
+                "used_hashes": list(used_hashes),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "total_lines": len(lines),
+            }
+            # Ensure directory exists
+            self.ensure_directory_exists(state_file.parent)
+            # Persist
+            self.write_json(state_file, new_state, indent=2)
+
+        # Return clamped content
+        return (choice_ln or "")[:hard_cap_chars].rstrip()
 
     def write_text(self, file_path: Path, content: str, append: bool = False) -> bool:
         """Writes or appends content to a text file. Ensures directory exists."""

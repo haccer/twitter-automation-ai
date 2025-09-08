@@ -13,6 +13,7 @@
     "media_directory": "media_files",
     "processed_tweets_file": "processed_tweets_log.csv",
     "community_replies_file": "data/community_replies.txt",
+    "community_replies_state_file": "data/community_replies_state.json",
     "cookie_file_per_account_in_accounts_json": true,
     "analysis_config": {
       "enable_relevance_filter": {
